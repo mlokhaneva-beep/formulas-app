@@ -6,266 +6,484 @@ import flet as ft
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 JSON_PATH = os.path.join(BASE_DIR, "formulas.json")
 
-SUBJECT_COLORS = {
-    "Физика": ft.Colors.CYAN_400,
-    "Математика": ft.Colors.AMBER_400,
-    "Химия": ft.Colors.PURPLE_400,
-    "Информатика": ft.Colors.GREEN_400,
-}
-
-SAFE_MATH = {
-    "sqrt": math.sqrt,
-    "sin": math.sin,
-    "cos": math.cos,
-    "tan": math.tan,
-    "pi": math.pi,
-    "e": math.e,
-    "log": math.log,
-    "log2": math.log2,
-    "log10": math.log10,
-    "abs": abs,
-    "round": round,
-    "pow": pow,
-}
-
-def load_data():
-    if not os.path.exists(JSON_PATH):
-        return {}
-    try:
-        with open(JSON_PATH, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-            if isinstance(raw, list):
-                grouped = {}
-                for item in raw:
-                    subj = str(item.get("subject", "Физика")).strip()
-                    grouped.setdefault(subj, []).append(item)
-                return grouped
-            elif isinstance(raw, dict):
-                return raw
-    except Exception:
-        pass
-    return {}
-
-def calculate_expression(expr: str, var_values: dict):
-    clean_expr = expr.replace("^", "**")
-    context = dict(SAFE_MATH)
-    context.update(var_values)
-    return eval(clean_expr, {"__builtins__": {}}, context)
-
-def build_calculator_ui(formula_item: dict, accent_color):
-    var_defs = formula_item.get("vars", [])
-    expr = formula_item.get("expression")
-    unit = formula_item.get("unit", "")
-
-    if not var_defs or not expr:
-        return ft.Container()
-
-    inputs = {}
-    result_text = ft.Text("Введите значения параметров", size=13, color=ft.Colors.GREY_400, selectable=True)
-
-    input_fields = []
-    for var in var_defs:
-        sym = var.get("symbol", "")
-        lbl = var.get("label", sym)
-        tf = ft.TextField(
-            label=lbl,
-            keyboard_type=ft.KeyboardType.NUMBER,
-            dense=True,
-            expand=True,
-        )
-        inputs[sym] = tf
-        input_fields.append(ft.Container(content=tf, width=160))
-
-    def on_calc_click(e):
+def load_formulas():
+    if os.path.exists(JSON_PATH):
         try:
-            parsed_vals = {}
-            for sym, field in inputs.items():
-                val_str = (field.value or "").strip().replace(",", ".")
-                if not val_str:
-                    result_text.value = f"Заполните: {field.label}"
-                    result_text.color = ft.Colors.RED_300
-                    e.page.update()
-                    return
-                parsed_vals[sym] = float(val_str)
+            with open(JSON_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if data:
+                    return data
+        except Exception as ex:
+            print("Ошибка загрузки formulas.json:", ex)
+    return []
 
-            res = calculate_expression(expr, parsed_vals)
-            formatted = f"{res:.4g}" if isinstance(res, (int, float)) else str(res)
-            result_text.value = f"Результат: {formatted} {unit}".strip()
-            result_text.color = accent_color
-        except ZeroDivisionError:
-            result_text.value = "Ошибка: деление на ноль"
-            result_text.color = ft.Colors.RED_300
-        except Exception:
-            result_text.value = "Ошибка вычисления"
-            result_text.color = ft.Colors.RED_300
-        e.page.update()
-
-    calc_body = ft.Column([
-        ft.Text("Калькулятор формулы", weight=ft.FontWeight.BOLD, size=14, color=accent_color),
-        ft.Row(input_fields, wrap=True, spacing=10),
-        ft.Row([
-            ft.Container(
-                content=ft.Text("Рассчитать", color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD, size=13),
-                padding=10,
-                bgcolor=ft.Colors.BLUE_700,
-                border_radius=8,
-                on_click=on_calc_click,
-            ),
-            ft.Container(content=result_text, expand=True),
-        ], wrap=True, spacing=10, alignment=ft.MainAxisAlignment.START),
-    ], spacing=10, visible=False)
-
-    def toggle_calc(e):
-        calc_body.visible = not calc_body.visible
-        toggle_btn.content.value = "Скрыть калькулятор" if calc_body.visible else "Открыть калькулятор"
-        e.page.update()
-
-    toggle_btn = ft.Container(
-        content=ft.Text("Открыть калькулятор", size=13, color=accent_color, weight=ft.FontWeight.W_600),
-        padding=6,
-        on_click=toggle_calc,
-    )
-
-    return ft.Container(
-        content=ft.Column([toggle_btn, calc_body], spacing=6),
-        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
-        padding=10,
-        border_radius=8,
-    )
+formulas_db = load_formulas()
 
 def main(page: ft.Page):
-    page.title = "Справочник формул"
+    page.title = "Интерактивный справочник формул"
     page.theme_mode = ft.ThemeMode.DARK
-    page.padding = 12
+    page.padding = 15
+    page.spacing = 15
     page.scroll = ft.ScrollMode.AUTO
 
-    data = load_data()
-    subjects = list(data.keys()) if data else ["Физика", "Математика", "Химия", "Информатика"]
-    current_subject = [subjects[0] if subjects else "Физика"]
+    current_subject = "Все"
+    search_query = ""
 
-    cards_column = ft.Column(spacing=12, expand=True)
+    cards_column = ft.Column(spacing=12)
 
-    def update_view():
-        cards_column.controls.clear()
-        subj = current_subject[0]
-        items = data.get(subj, [])
-        query = (search_field.value or "").strip().lower()
+    def calculate_result(formula_id, inputs_dict, result_text):
+        try:
+            # --- ФИЗИКА ---
+            if formula_id == "speed":
+                s = float(inputs_dict["s"].value)
+                t = float(inputs_dict["t"].value)
+                if t == 0:
+                    result_text.value = "Ошибка: время не может быть 0"
+                    result_text.color = ft.Colors.RED_400
+                else:
+                    v = s / t
+                    result_text.value = f"Ответ: v = {v:.2f} м/с ({v * 3.6:.2f} км/ч)"
+                    result_text.color = ft.Colors.GREEN_400
 
-        filtered = [
-            x for x in items
-            if query in str(x.get("title") or x.get("name") or "").lower()
-            or query in str(x.get("formula", "")).lower()
-            or query in str(x.get("description", "")).lower()
-            or query in str(x.get("topic", "")).lower()
-        ]
+            elif formula_id == "acceleration":
+                v = float(inputs_dict["v"].value)
+                v0 = float(inputs_dict["v0"].value)
+                t = float(inputs_dict["t"].value)
+                if t == 0:
+                    result_text.value = "Ошибка: время не может быть 0"
+                    result_text.color = ft.Colors.RED_400
+                else:
+                    result_text.value = f"Ответ: a = {(v - v0) / t:.2f} м/с²"
+                    result_text.color = ft.Colors.GREEN_400
 
-        if not filtered:
-            cards_column.controls.append(
-                ft.Text("Формулы не найдены", size=15, color=ft.Colors.GREY_400)
-            )
-        else:
-            accent = SUBJECT_COLORS.get(subj, ft.Colors.BLUE_400)
-            for f in filtered:
-                t_title = f.get("title") or f.get("name") or "Формула"
-                t_topic = f.get("topic", subj)
+            elif formula_id == "displacement":
+                v0 = float(inputs_dict["v0"].value)
+                a = float(inputs_dict["a"].value)
+                t = float(inputs_dict["t"].value)
+                result_text.value = f"Ответ: s = {v0 * t + (a * (t ** 2)) / 2:.2f} м"
+                result_text.color = ft.Colors.GREEN_400
 
-                card_elements = [
-                    ft.Row([
-                        ft.Text(
-                            str(t_title),
-                            size=17,
-                            weight=ft.FontWeight.BOLD,
-                            color=ft.Colors.WHITE,
-                            expand=True,
-                            no_wrap=False,
-                        ),
-                        ft.Container(
-                            content=ft.Text(str(t_topic), size=11, color=accent),
-                            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
-                            padding=6,
-                            border_radius=6,
-                        ),
-                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.START),
-                    ft.Text(
-                        str(f.get("formula", "")),
-                        size=20,
-                        weight=ft.FontWeight.BOLD,
-                        color=accent,
-                        selectable=True,
-                        no_wrap=False,
-                    ),
-                    ft.Text(
-                        str(f.get("description", "")),
-                        size=13,
-                        color=ft.Colors.GREY_300,
-                        no_wrap=False,
-                    ),
-                ]
+            elif formula_id == "force":
+                m = float(inputs_dict["m"].value)
+                a = float(inputs_dict["a"].value)
+                result_text.value = f"Ответ: F = {m * a:.2f} Н"
+                result_text.color = ft.Colors.GREEN_400
 
-                calc_widget = build_calculator_ui(f, accent)
-                if calc_widget.content:
-                    card_elements.append(calc_widget)
+            elif formula_id == "density":
+                m = float(inputs_dict["m"].value)
+                v_vol = float(inputs_dict["v"].value)
+                if v_vol == 0:
+                    result_text.value = "Ошибка: объём не может быть 0"
+                    result_text.color = ft.Colors.RED_400
+                else:
+                    result_text.value = f"Ответ: ρ = {m / v_vol:.2f} кг/м³"
+                    result_text.color = ft.Colors.GREEN_400
 
-                if f.get("task"):
-                    card_elements.append(
-                        ft.Container(
-                            content=ft.Column([
-                                ft.Text("Пример задачи:", size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_400),
-                                ft.Text(str(f.get("task")), size=13, color=ft.Colors.GREY_300, no_wrap=False),
-                                ft.Text(f"Решение: {f.get('solution', '')}", size=13, color=accent, no_wrap=False),
-                            ], spacing=4),
-                            padding=10,
-                            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
-                            border_radius=8,
-                        )
-                    )
+            elif formula_id == "gravity_force":
+                m = float(inputs_dict["m"].value)
+                g = float(inputs_dict["g"].value) if inputs_dict["g"].value else 9.8
+                result_text.value = f"Ответ: F_тяж = {m * g:.2f} Н"
+                result_text.color = ft.Colors.GREEN_400
 
-                cards_column.controls.append(
-                    ft.Container(
-                        content=ft.Column(card_elements, spacing=8),
-                        padding=12,
-                        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-                        border_radius=10,
-                    )
-                )
+            elif formula_id == "hooke_law":
+                k = float(inputs_dict["k"].value)
+                x = float(inputs_dict["x"].value)
+                result_text.value = f"Ответ: F_упр = {k * x:.2f} Н"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "friction_force":
+                mu = float(inputs_dict["mu"].value)
+                n = float(inputs_dict["n"].value)
+                result_text.value = f"Ответ: F_тр = {mu * n:.2f} Н"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "pressure":
+                f_val = float(inputs_dict["f"].value)
+                s_val = float(inputs_dict["s"].value)
+                if s_val == 0:
+                    result_text.value = "Ошибка: площадь не может быть 0"
+                    result_text.color = ft.Colors.RED_400
+                else:
+                    result_text.value = f"Ответ: P = {f_val / s_val:.2f} Па"
+                    result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "hydrostatic_p":
+                rho = float(inputs_dict["rho"].value)
+                h = float(inputs_dict["h"].value)
+                g = float(inputs_dict["g"].value) if inputs_dict["g"].value else 9.8
+                p = rho * g * h
+                result_text.value = f"Ответ: P = {p:.2f} Па ({p / 1000:.2f} кПа)"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "archimedes":
+                rho = float(inputs_dict["rho"].value)
+                v = float(inputs_dict["v"].value)
+                g = float(inputs_dict["g"].value) if inputs_dict["g"].value else 9.8
+                result_text.value = f"Ответ: F_а = {rho * g * v:.2f} Н"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "work":
+                f_val = float(inputs_dict["f"].value)
+                s_val = float(inputs_dict["s"].value)
+                result_text.value = f"Ответ: A = {f_val * s_val:.2f} Дж"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "power":
+                a_val = float(inputs_dict["a"].value)
+                t_val = float(inputs_dict["t"].value)
+                if t_val == 0:
+                    result_text.value = "Ошибка: время не может быть 0"
+                    result_text.color = ft.Colors.RED_400
+                else:
+                    result_text.value = f"Ответ: N = {a_val / t_val:.2f} Вт"
+                    result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "kinetic_energy":
+                m = float(inputs_dict["m"].value)
+                v = float(inputs_dict["v"].value)
+                result_text.value = f"Ответ: E_k = {(m * (v ** 2)) / 2:.2f} Дж"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "potential_energy":
+                m = float(inputs_dict["m"].value)
+                h = float(inputs_dict["h"].value)
+                g = float(inputs_dict["g"].value) if inputs_dict["g"].value else 9.8
+                result_text.value = f"Ответ: E_p = {m * g * h:.2f} Дж"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "ohm":
+                u = float(inputs_dict["u"].value)
+                r = float(inputs_dict["r"].value)
+                if r == 0:
+                    result_text.value = "Ошибка: сопротивление не может быть 0"
+                    result_text.color = ft.Colors.RED_400
+                else:
+                    result_text.value = f"Ответ: I = {u / r:.2f} А"
+                    result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "joule_lenz":
+                i = float(inputs_dict["i"].value)
+                r = float(inputs_dict["r"].value)
+                t = float(inputs_dict["t"].value)
+                result_text.value = f"Ответ: Q = {(i ** 2) * r * t:.2f} Дж"
+                result_text.color = ft.Colors.GREEN_400
+
+            # --- МАТЕМАТИКА ---
+            elif formula_id == "pythagoras":
+                a = float(inputs_dict["a"].value)
+                b = float(inputs_dict["b"].value)
+                result_text.value = f"Ответ: c = {math.sqrt(a**2 + b**2):.2f}"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "quadratic":
+                a = float(inputs_dict["a"].value)
+                b = float(inputs_dict["b"].value)
+                c = float(inputs_dict["c"].value)
+                d = b**2 - 4 * a * c
+                if d < 0:
+                    result_text.value = f"D = {d:.2f} (действительных корней нет)"
+                    result_text.color = ft.Colors.AMBER_400
+                elif d == 0:
+                    result_text.value = f"D = 0, один корень: x = {-b / (2 * a):.2f}"
+                    result_text.color = ft.Colors.GREEN_400
+                else:
+                    x1 = (-b + math.sqrt(d)) / (2 * a)
+                    x2 = (-b - math.sqrt(d)) / (2 * a)
+                    result_text.value = f"D = {d:.2f} => x₁ = {x1:.2f}, x₂ = {x2:.2f}"
+                    result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "triangle_area":
+                a = float(inputs_dict["a"].value)
+                h = float(inputs_dict["h"].value)
+                result_text.value = f"Ответ: S = {(a * h) / 2:.2f}"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "circle_area":
+                r = float(inputs_dict["r"].value)
+                result_text.value = f"Ответ: S = {math.pi * (r ** 2):.2f}"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "trapezoid_area":
+                a = float(inputs_dict["a"].value)
+                b = float(inputs_dict["b"].value)
+                h = float(inputs_dict["h"].value)
+                result_text.value = f"Ответ: S = {((a + b) / 2) * h:.2f}"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "cylinder_vol":
+                r = float(inputs_dict["r"].value)
+                h = float(inputs_dict["h"].value)
+                result_text.value = f"Ответ: V = {math.pi * (r ** 2) * h:.2f}"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "sphere_vol":
+                r = float(inputs_dict["r"].value)
+                result_text.value = f"Ответ: V = {(4 / 3) * math.pi * (r ** 3):.2f}"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "arithmetic_prog":
+                a1 = float(inputs_dict["a1"].value)
+                d = float(inputs_dict["d"].value)
+                n = float(inputs_dict["n"].value)
+                result_text.value = f"Ответ: a_{int(n)} = {a1 + d * (n - 1):.2f}"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "geom_prog":
+                b1 = float(inputs_dict["b1"].value)
+                q = float(inputs_dict["q"].value)
+                n = float(inputs_dict["n"].value)
+                result_text.value = f"Ответ: b_{int(n)} = {b1 * (q ** (n - 1)):.2f}"
+                result_text.color = ft.Colors.GREEN_400
+
+            # --- ХИМИЯ ---
+            elif formula_id == "mass_fraction":
+                m_solute = float(inputs_dict["m_solute"].value)
+                m_solution = float(inputs_dict["m_solution"].value)
+                if m_solution == 0:
+                    result_text.value = "Ошибка: масса раствора не может быть 0"
+                    result_text.color = ft.Colors.RED_400
+                else:
+                    result_text.value = f"Ответ: ω = {(m_solute / m_solution) * 100:.2f}%"
+                    result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "amount_substance":
+                m = float(inputs_dict["m"].value)
+                m_molar = float(inputs_dict["m_molar"].value)
+                if m_molar == 0:
+                    result_text.value = "Ошибка: молярная масса не может быть 0"
+                    result_text.color = ft.Colors.RED_400
+                else:
+                    result_text.value = f"Ответ: n = {m / m_molar:.2f} моль"
+                    result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "gas_volume":
+                n = float(inputs_dict["n"].value)
+                result_text.value = f"Ответ: V = {n * 22.4:.2f} л (при н.у.)"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "avogadro_number":
+                n = float(inputs_dict["n"].value)
+                particles = n * 6.022e23
+                result_text.value = f"Ответ: N = {particles:.3e} молекул"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "molar_conc":
+                n = float(inputs_dict["n"].value)
+                v = float(inputs_dict["v"].value)
+                if v == 0:
+                    result_text.value = "Ошибка: объём не может быть 0"
+                    result_text.color = ft.Colors.RED_400
+                else:
+                    result_text.value = f"Ответ: C = {n / v:.2f} моль/л (М)"
+                    result_text.color = ft.Colors.GREEN_400
+
+            # --- ИНФОРМАТИКА ---
+            elif formula_id == "info_vol":
+                k = float(inputs_dict["k"].value)
+                i_bit = float(inputs_dict["i"].value)
+                bits = k * i_bit
+                bytes_val = bits / 8
+                kbytes_val = bytes_val / 1024
+                result_text.value = f"Ответ: {bits:.0f} бит ({bytes_val:.1f} байт / {kbytes_val:.2f} Кбайт)"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "hartley":
+                n = float(inputs_dict["n"].value)
+                if n <= 0:
+                    result_text.value = "Ошибка: N должно быть > 0"
+                    result_text.color = ft.Colors.RED_400
+                else:
+                    i_val = math.log2(n)
+                    result_text.value = f"Ответ: i = log₂(N) = {i_val:.2f} бит (округленно: {math.ceil(i_val)} бит)"
+                    result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "image_vol":
+                x = float(inputs_dict["x"].value)
+                y = float(inputs_dict["y"].value)
+                i_depth = float(inputs_dict["i"].value)
+                bits = x * y * i_depth
+                kbytes = bits / (8 * 1024)
+                mbytes = kbytes / 1024
+                result_text.value = f"Ответ: {kbytes:.1f} Кбайт ({mbytes:.2f} Мбайт)"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "audio_transfer":
+                f_freq = float(inputs_dict["f"].value)
+                i_res = float(inputs_dict["i"].value)
+                t_sec = float(inputs_dict["t"].value)
+                k_chan = float(inputs_dict["k"].value)
+                bits = f_freq * i_res * t_sec * k_chan
+                mbytes = bits / (8 * 1024 * 1024)
+                result_text.value = f"Ответ: {bits:.0f} бит ({mbytes:.2f} Мбайт)"
+                result_text.color = ft.Colors.GREEN_400
+
+            elif formula_id == "transfer_speed":
+                v_speed = float(inputs_dict["v"].value)
+                t_sec = float(inputs_dict["t"].value)
+                kbits = v_speed * t_sec
+                kbytes = kbits / 8
+                result_text.value = f"Ответ: Q = {kbits:.1f} Кбит ({kbytes:.1f} Кбайт / {kbytes / 1024:.2f} Мбайт)"
+                result_text.color = ft.Colors.GREEN_400
+
+            else:
+                result_text.value = "Калькулятор для этой формулы в разработке"
+                result_text.color = ft.Colors.AMBER_400
+
+        except ValueError:
+            result_text.value = "Ошибка: заполните поля числами"
+            result_text.color = ft.Colors.RED_400
         page.update()
 
-    def select_subj(e):
-        current_subject[0] = e.control.data
-        for c in nav_row.controls:
-            c.bgcolor = ft.Colors.BLUE_700 if c.data == current_subject[0] else ft.Colors.SURFACE_CONTAINER_HIGH
-        update_view()
+    def build_card(formula):
+        calc_inputs = {}
+        calc_fields_row = ft.Row(wrap=True, spacing=10)
+        result_text = ft.Text("", size=14, weight=ft.FontWeight.W_600)
 
-    search_field = ft.TextField(
-        hint_text="Поиск формулы или темы...",
-        prefix_icon=ft.Icons.SEARCH,
-        on_change=lambda e: update_view(),
-        expand=True,
-        dense=True,
-    )
-
-    nav_row = ft.Row(spacing=8, wrap=True)
-    for s in subjects:
-        nav_row.controls.append(
-            ft.Container(
-                content=ft.Text(s, color=ft.Colors.WHITE, size=13),
-                data=s,
-                padding=8,
-                bgcolor=ft.Colors.BLUE_700 if s == current_subject[0] else ft.Colors.SURFACE_CONTAINER_HIGH,
-                border_radius=8,
-                on_click=select_subj,
+        fields = formula.get("calc_fields", [])
+        for field in fields:
+            tf = ft.TextField(
+                label=field.get("label", field["name"]),
+                width=175,
+                height=45,
+                text_size=13,
+                content_padding=10,
+                keyboard_type=ft.KeyboardType.NUMBER
             )
+            calc_inputs[field["name"]] = tf
+            calc_fields_row.controls.append(tf)
+
+        calc_box = ft.Column(
+            visible=False,
+            spacing=10,
+            controls=[
+                calc_fields_row,
+                ft.FilledButton(
+                    "Рассчитать",
+                    on_click=lambda _: calculate_result(formula.get("id"), calc_inputs, result_text)
+                ),
+                result_text
+            ]
         )
 
-    page.add(
-        ft.Text("Справочник формул", size=22, weight=ft.FontWeight.BOLD),
-        ft.Divider(),
-        ft.Row([search_field]),
-        nav_row,
-        ft.Container(height=6),
-        cards_column,
+        task_text = formula.get("example_task", "Пример задачи скоро появится.")
+        task_box = ft.Container(
+            visible=False,
+            content=ft.Column(
+                spacing=5,
+                controls=[
+                    ft.Text("Условие и разбор задачи:", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.AMBER_200),
+                    ft.Text(task_text, size=13, color=ft.Colors.GREY_200)
+                ]
+            ),
+            bgcolor=ft.Colors.GREY_800,
+            padding=10,
+            border_radius=8
+        )
+
+        def toggle_calc(e):
+            calc_box.visible = not calc_box.visible
+            toggle_calc_btn.text = "Скрыть калькулятор" if calc_box.visible else "Калькулятор"
+            page.update()
+
+        def toggle_task(e):
+            task_box.visible = not task_box.visible
+            toggle_task_btn.text = "Скрыть задачу" if task_box.visible else "Пример задачи"
+            page.update()
+
+        toggle_calc_btn = ft.OutlinedButton("Калькулятор", on_click=toggle_calc)
+        toggle_task_btn = ft.OutlinedButton("Пример задачи", on_click=toggle_task)
+
+        return ft.Container(
+            content=ft.Column(
+                spacing=10,
+                tight=True,
+                controls=[
+                    ft.Row(
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        controls=[
+                            ft.Text(formula.get("title", ""), size=17, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                            ft.Container(
+                                content=ft.Text(formula.get("subject", ""), size=11, color=ft.Colors.BLUE_200),
+                                bgcolor=ft.Colors.BLUE_900,
+                                padding=8,
+                                border_radius=6
+                            )
+                        ]
+                    ),
+                    ft.Text(formula.get("formula", ""), size=19, weight=ft.FontWeight.BOLD, color=ft.Colors.CYAN_300),
+                    ft.Text(formula.get("description", ""), size=13, color=ft.Colors.GREY_300),
+                    ft.Row(spacing=10, controls=[toggle_task_btn, toggle_calc_btn]),
+                    task_box,
+                    calc_box
+                ]
+            ),
+            bgcolor=ft.Colors.GREY_900,
+            border_radius=12,
+            padding=16,
+            border=ft.Border.all(width=1, color=ft.Colors.GREY_800)
+        )
+
+    def update_cards():
+        cards_column.controls.clear()
+        for f in formulas_db:
+            subj_match = current_subject == "Все" or f.get("subject", "").strip().lower() == current_subject.strip().lower()
+            query_match = (
+                search_query.lower() in f.get("title", "").lower() or
+                search_query.lower() in f.get("formula", "").lower() or
+                search_query.lower() in f.get("description", "").lower()
+            )
+            if subj_match and query_match:
+                cards_column.controls.append(build_card(f))
+        page.update()
+
+    def on_search(e):
+        nonlocal search_query
+        search_query = e.control.value
+        update_cards()
+
+    def on_filter_click(e):
+        nonlocal current_subject
+        current_subject = e.control.data
+        for btn in filter_buttons.controls:
+            btn.style = ft.ButtonStyle(
+                bgcolor=ft.Colors.BLUE_700 if btn.data == current_subject else ft.Colors.GREY_800
+            )
+        page.update()
+        update_cards()
+
+    search_bar = ft.TextField(
+        hint_text="Поиск формулы или темы...",
+        prefix_icon=ft.Icons.SEARCH,
+        on_change=on_search,
+        border_radius=10,
+        height=48,
+        content_padding=12
     )
-    update_view()
+
+    subjects = ["Все", "Физика", "Химия", "Математика", "Информатика"]
+    filter_buttons = ft.Row(
+        wrap=True,
+        spacing=8,
+        controls=[
+            ft.FilledButton(
+                subj,
+                data=subj,
+                on_click=on_filter_click,
+                style=ft.ButtonStyle(
+                    bgcolor=ft.Colors.BLUE_700 if subj == "Все" else ft.Colors.GREY_800
+                )
+            ) for subj in subjects
+        ]
+    )
+
+    page.add(
+        ft.Text("Справочник формул", size=24, weight=ft.FontWeight.BOLD),
+        search_bar,
+        filter_buttons,
+        cards_column
+    )
+
+    update_cards()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8555))
